@@ -16,6 +16,7 @@ from xrimodel.engine import (
     Shell,
     Sphere,
     System3D,
+    ThinDisc,
     build_spectrum,
 )
 from xrimodel.engine.primitives import RSUN_CM, clump_factor
@@ -189,8 +190,11 @@ def test_spec_round_trip(tmp_path):
         volumes=[BetaWind(name="wind", star=(2.0, 0.0, 0.0), r_star=0.5, extent=3.0,
                           refine_body="star", clumping={"f_vol": 0.2, "size": 0.1},
                           focus={"towards": (0.0, 0.0, 0.0), "amp": 2.0, "width": 20.0})])
-    grid = xm.RegularGrid(nx=12, ny=12, scale=12.0)
-    m = _render(system, grid)
+    sc = Scene(ra=0.0, dec=0.0, distance_pc=D_PC, grid=xm.RegularGrid(nx=12, ny=12, scale=12.0))
+    sc.add(system)
+    sc.add(ThinDisc("disc", {"kind": "gaussian_line", "e0": 6.4, "sigma": 0.005}, flux=1e-4,
+                    mass_msun=1e4, r_out=40.0, inclination=60.0))
+    m = sc.render()
     xm.write_model(m, tmp_path / "s.fits")
     m2 = Scene.from_spec(xm.read_model(tmp_path / "s.fits").spec).render()
     assert [L.name for L in m2.layers] == [L.name for L in m.layers]

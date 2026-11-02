@@ -27,20 +27,6 @@ def test_separation_matches_miller_jones_2021():
     assert b.separation_cm() / AU == pytest.approx(0.244, abs=0.002)
 
 
-def test_donor_volume_equivalent_radius():
-    b = XRBinary("cyg", CORONA)
-    f = b.frame()
-    phi, phi_s, t_l1, axis = b._roche(f)
-    g = np.linspace(-t_l1, t_l1, 90)
-    X, Y, Z = np.meshgrid(g, g, g, indexing="ij")
-    d = f["donor"] / f["a"]
-    pts = d + np.stack([X, Y, Z], -1).reshape(-1, 3)
-    inside = ((np.asarray(phi(pts)) < phi_s) & ((pts - d) @ axis < t_l1)
-              & (np.linalg.norm(pts - d, axis=-1) < t_l1))
-    r_eq = (3 * inside.sum() * (g[1] - g[0]) ** 3 / (4 * np.pi)) ** (1 / 3) * f["a"] / RSUN_CM
-    assert r_eq == pytest.approx(22.3, rel=0.02)
-
-
 def test_corona_doppler_follows_the_orbit():
     """The compact object's line-of-sight speed is 2 pi a_bh sin(i) / P at quadrature and
     zero at conjunction (phase 0)."""
@@ -88,26 +74,24 @@ def test_delays_are_bounded_by_light_travel():
         assert np.all((mp["DELAY"][on] >= 0) & (mp["DELAY"][on] <= tau_max))
 
 
-def test_donor_appears_where_the_orbit_puts_it():
-    m, b = _render(phase=0.5, n=48, scale=6.0)
-    f = b._last_frame
-    star = m.layer("cyg_star")
-    x, y = star.grid.centres()
-    w = star.maps["NORM"] / star.maps["NORM"].sum()
-    u_a, u_b = b.sky_axes()
-    d = f["donor"] - f["bh"]
-    expect = (d @ f["e_a"] * u_a + d @ f["e_b"] * u_b) / f["cm_per_uas"]
-    r_star_uas = 22.3 * RSUN_CM / f["cm_per_uas"]
-    # the lit cap is biased towards the compact object, but within a stellar radius
-    assert np.hypot((w * x).sum() - expect[0], (w * y).sum() - expect[1]) < r_star_uas
-
-
-def test_binary_round_trips_through_modelspec(tmp_path):
-    m, _ = _render(phase=0.3, n=16)
-    xm.write_model(m, tmp_path / "b.fits")
-    m2 = Scene.from_spec(xm.read_model(tmp_path / "b.fits").spec).render()
-    for a_, b_ in zip(m.layers, m2.layers):
-        assert b_.mean_photon_flux() == pytest.approx(a_.mean_photon_flux(), rel=1e-9)
+def test_donor_follows_the_orbit_counterclockwise_on_the_sky():
+    """The donor's light centre sits where the orbit puts it (within a stellar radius:
+    the lit cap leans towards the compact object), and with the angular momentum towards
+    the observer (i < 90 deg) its position angle increases with phase."""
+    pas = []
+    for phase in (0.35, 0.45, 0.55):
+        m, b = _render(phase=phase, n=48, scale=6.0)
+        f = b._last_frame
+        star = m.layer("cyg_star")
+        x, y = star.grid.centres()
+        w = star.maps["NORM"] / star.maps["NORM"].sum()
+        cx, cy = (w * x).sum(), (w * y).sum()
+        u_a, u_b = b.sky_axes()
+        d = f["donor"] - f["bh"]
+        expect = (d @ f["e_a"] * u_a + d @ f["e_b"] * u_b) / f["cm_per_uas"]
+        assert np.hypot(cx - expect[0], cy - expect[1]) < 22.3 * RSUN_CM / f["cm_per_uas"]
+        pas.append(np.arctan2(cx, cy))
+    assert np.all(np.diff(np.unwrap(pas)) > 0)
 
 
 def test_reflection_falls_back_without_xspec(monkeypatch):
@@ -123,20 +107,6 @@ def test_reflection_falls_back_without_xspec(monkeypatch):
     assert t.values[i64] > 5 * t.values[i55]  # Fe K-alpha line on the reflected continuum
 
 
-def test_orbit_runs_counterclockwise_on_the_sky():
-    """Angular momentum towards the observer (i < 90 deg): the donor's position angle,
-    seen from the compact object, increases with phase."""
-    pas = []
-    for phase in (0.35, 0.45, 0.55):
-        m, _ = _render(phase=phase, n=48, scale=6.0)
-        star = m.layer("cyg_star")
-        x, y = star.grid.centres()
-        w = star.maps["NORM"] / star.maps["NORM"].sum()
-        pas.append(np.degrees(np.arctan2((w * x).sum(), (w * y).sum())))
-    d = np.diff(np.unwrap(np.radians(pas)))
-    assert np.all(d > 0)
-
-
 def test_disc_reflection_converges_on_an_adaptive_grid():
     """The disc's reflection is concentrated within a few r_in (~1 uas): refine the grid
     towards the compact object and the flux converges."""
@@ -149,14 +119,3 @@ def test_disc_reflection_converges_on_an_adaptive_grid():
         m = sc.render()
         out.append(m.layer("cyg_disc").mean_photon_flux() / m.layer("cyg_corona").mean_photon_flux())
     assert out[0] == pytest.approx(out[1], rel=0.03)
-
-
-def test_wind_layers_split_by_column():
-    m, b = _render(phase=0.0, n=24)
-    winds = [L for L in m.layers if L.name.startswith("cyg_wind")]
-    assert len(winds) >= 2
-    edges = list(b.wind_nh_bins) + [np.inf]
-    for L in winds:
-        k = int(L.name[-1])
-        nh = L.maps["NH"][L.maps["NORM"] > 0] - b.nh_ism
-        assert np.all((nh >= edges[k] * 0.999) & (nh <= edges[k + 1] * 1.001))

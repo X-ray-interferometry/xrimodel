@@ -663,7 +663,7 @@ class Jet(_Volume):
     """A conical jet (and counter-jet if ``two_sided``) from ``base`` along ``axis``,
     from ``r0`` to ``r1``, density and emissivity profile ~ (r / r0)^-index, bulk
     Lorentz factor ``lorentz`` along the axis. ``knots`` = [{"r", "size", "j"}] adds
-    Gaussian blobs on the axis moving with the flow (Doppler weight g^3 rather than the
+    Gaussian blobs (cut at 4 sigma) on the axis moving with the flow (Doppler weight g^3 rather than the
     steady jet's g^2). Needs an ``emission`` dict to shine."""
 
     base: tuple = (0.0, 0.0, 0.0)
@@ -720,7 +720,7 @@ class Jet(_Volume):
                 for rk, sk, amp in kn:
                     for sg in sides:
                         d2 = jnp.sum((p - (c + sg * rk * ax)) ** 2, -1)
-                        jk = jk + amp * jnp.exp(-0.5 * d2 / sk**2)
+                        jk = jk + jnp.where(d2 < 16 * sk**2, amp * jnp.exp(-0.5 * d2 / sk**2), 0.0)
                 return jc, jk
 
             out.emission["j"] = j

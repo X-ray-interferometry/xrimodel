@@ -5,7 +5,12 @@ A corona at the centre lights an obscuring torus (Compton reflection with Fe K-a
 its inner face), a clumpy broad-line region (scattering plus a 6.4 keV line), and
 ionisation cones (electron scattering of the nucleus). At 15 Mpc, 1 pc is 13.8 mas.
 
-Run:  python examples/agn.py     (a few minutes)
+In the plot, black is no emission: outside the cones there is no gas, and the torus's
+outer faces (dashed outline: its whole silhouette) do not see the corona, so only its
+inner face lights up. Light scattered once by the cones onto the torus is not modelled
+(single scattering).
+
+Run:  python examples/agn.py     (about a minute)
 Writes agn.fits and agn.png next to this script.
 """
 
@@ -55,14 +60,28 @@ def band_image(lo, hi):
     return grid.to_image(tot) / pix_sr
 
 
+# outline of the torus (its whole silhouette, lit or not): render it once more with a
+# uniformly emitting surface and no reflection
+outline = System3D(name="o", length_unit="pc", inclination=agn.inclination,
+                   node_pa=agn.node_pa, supersample=1, extent=agn.extent,
+                   bodies=[Torus(name="torus", r_major=0.6, r_minor=0.3, reflection=None,
+                                 emission={"spectrum": corona, "intensity": 1.0})])
+sc_o = Scene(ra=scene.ra, dec=scene.dec, distance_pc=scene.distance_pc, grid=grid)
+sc_o.add(outline)
+silhouette = grid.to_image(sc_o.render().layer("o_torus_emit").maps["NORM"] > 0)
+
 half = grid.nx / 2 * grid.scale / 1e3
 extent = [half, -half, -half, half]
+cmap = plt.get_cmap("magma").copy()
+cmap.set_bad(cmap(0.0))  # no emission at all: no gas there, or an unlit surface
 fig, ax = plt.subplots(1, 2, figsize=(11, 4.6))
 for a_, (lo, hi), lab in [(ax[0], (2.0, 10.0), "2-10 keV"), (ax[1], (6.3, 6.5), "6.3-6.5 keV")]:
     img = band_image(lo, hi)
     pos = img[img > 0]
-    im = a_.imshow(img, origin="lower", extent=extent, cmap="magma",
-                   norm=LogNorm(vmin=np.percentile(pos, 5), vmax=pos.max()))
+    im = a_.imshow(np.where(img > 0, img, np.nan), origin="lower", extent=extent, cmap=cmap,
+                   norm=LogNorm(vmin=np.percentile(pos, 1), vmax=pos.max()))
+    a_.contour(silhouette.astype(float), levels=[0.5], extent=extent, origin="lower",
+               colors="c", linewidths=0.8, linestyles="--")
     a_.set_xlabel("East offset (mas)")
     a_.set_ylabel("North offset (mas)")
     fig.colorbar(im, ax=a_, label=f"{lab} (ph s$^{{-1}}$ cm$^{{-2}}$ sr$^{{-1}}$)", fraction=0.046)

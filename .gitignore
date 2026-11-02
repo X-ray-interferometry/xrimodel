@@ -10,3 +10,7 @@ examples/quickstart.png
 .venv/
 examples/cygx1_phase*.fits
 examples/cygx1_phase*.png
+examples/agn.fits
+examples/agn.png
+notebooks/*.fits
+notebooks/.ipynb_checkpoints/

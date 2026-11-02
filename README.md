@@ -128,6 +128,12 @@ compact object: use a `QuadtreeGrid` refined towards it for accurate disc fluxes
 `examples/cygx1.py` rebuilds Cyg X-1 (Miller-Jones et al. 2021 system parameters) at
 three orbital phases in a few minutes.
 
+## Notebooks
+
+`notebooks/` holds executed examples: the format and sampler, Cyg X-1 around its orbit, AGN tori,
+cones and jets, and an active star simulated end to end through XRISALIS
+(see `notebooks/README.md`).
+
 ## Tests
 
 ```bash

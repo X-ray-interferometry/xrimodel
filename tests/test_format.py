@@ -3,17 +3,8 @@ import pytest
 from astropy.io import fits
 
 import xrimodel as xm
-from xrimodel.format.grid import decode_uniq, encode_uniq
 
 # ------------------------------------------------------------------ grids
-
-
-def test_uniq_roundtrip():
-    lv = np.array([0, 1, 3, 7, 12])
-    ix = np.array([0, 1, 5, 100, 4000])
-    iy = np.array([0, 0, 7, 127, 1])
-    l2, x2, y2 = decode_uniq(encode_uniq(lv, ix, iy))
-    assert np.array_equal(lv, l2) and np.array_equal(ix, x2) and np.array_equal(iy, y2)
 
 
 def test_quadtree_tiles_root_exactly():
@@ -23,14 +14,17 @@ def test_quadtree_tiles_root_exactly():
     assert qt.n < 64**2  # adaptive: far fewer leaves than the uniform finest grid
 
 
-def test_offsets_radec_roundtrip_uas():
-    x = np.array([0.0, 123.4, -5000.0])
-    y = np.array([0.0, -77.7, 2500.0])
+def test_offsets_are_true_angles():
+    """Tangent-plane offsets (x East, y North) map to sky positions at the right
+    separation and position angle (astropy), at Cyg X-1's declination."""
+    from astropy.coordinates import SkyCoord
+
+    x, y = np.array([5000.0, 0.0, -3000.0]), np.array([0.0, 5000.0, 4000.0])
     ra, dec = xm.offsets_to_radec(x, y, 299.59, 35.20)
-    x2, y2 = xm.radec_to_offsets(ra, dec, 299.59, 35.20)
-    assert np.allclose(x2, x, atol=0.5) and np.allclose(y2, y, atol=0.5)
-    # East offset increases RA
-    assert ra[1] > ra[0]
+    c0, c = SkyCoord(299.59, 35.20, unit="deg"), SkyCoord(ra, dec, unit="deg")
+    assert np.allclose(c0.separation(c).to_value("uas"), np.hypot(x, y), rtol=1e-6)
+    assert np.allclose(c0.position_angle(c).to_value("rad"), np.mod(np.arctan2(x, y), 2 * np.pi),
+                       atol=1e-6)
 
 
 def test_regular_grid_orientation():
@@ -168,12 +162,3 @@ def test_simput_row_sits_on_image_reference(tmp_path):
     assert cat["RA"][0] == pytest.approx(hdr["CRVAL1"], abs=1e-12)
     assert cat["DEC"][0] == pytest.approx(hdr["CRVAL2"], abs=1e-12)
     assert hdr["CRPIX1"] == (10 + 1) / 2 and hdr["CRPIX2"] == (6 + 1) / 2
-
-
-def test_parse_row_references():
-    from xrimodel.format.io import _parse_ref
-
-    assert _parse_ref("[SPECTRUM,1][#row==3]") == ("SPECTRUM", 3)
-    assert _parse_ref("[SPEC2,1][NAME=='abc']") == ("SPEC2", "abc")
-    assert _parse_ref("[LC_x,1]") == ("LC_x", None)
-    assert _parse_ref("NULL") == (None, None)

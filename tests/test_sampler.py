@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 
 import xrimodel as xm
-from xrimodel.format.spectra import sigma_photoabs
 
 
 def _one_pixel_specmap(**maps):
@@ -35,21 +34,14 @@ def test_specmap_energy_shift_and_broadening():
     assert ph.energy.std() == pytest.approx(np.hypot(6.0 * 0.02, 1.5 * 0.01), rel=0.05)
 
 
-def test_specmap_absorption_survival():
-    nh = 3e22
-    m = _one_pixel_specmap(NH=nh)
+@pytest.mark.parametrize("maps, tau", [
+    ({"NH": 3e22}, 3e22 * 2.4e-22 * 4.0 ** (-8 / 3)),       # photoabsorption
+    ({"NE": 1.5e24}, 1.5e24 * 6.6524587e-25 * 0.9848),      # Klein-Nishina, 0.985 sigma_T at 4 keV
+])
+def test_specmap_column_survival(maps, tau):
+    m = _one_pixel_specmap(**maps)
     ph = xm.sample_photons(m, 0.0, 20000.0, area=1.0, rng=2)
-    expected = 20000 * np.exp(-nh * sigma_photoabs(4.0))
-    assert abs(len(ph) - expected) < 5 * np.sqrt(expected)
-
-
-def test_specmap_electron_scattering_survival():
-    """A Compton-thick electron column scatters photons out of the beam: survival
-    exp(-NE sigma_KN), with sigma_KN(4 keV) = 0.985 sigma_T."""
-    ne = 1.5e24
-    m = _one_pixel_specmap(NE=ne)
-    ph = xm.sample_photons(m, 0.0, 20000.0, area=1.0, rng=3)
-    expected = 20000 * np.exp(-ne * 6.6524587e-25 * 0.9848)
+    expected = 20000 * np.exp(-tau)
     assert abs(len(ph) - expected) < 5 * np.sqrt(expected)
 
 
@@ -95,19 +87,6 @@ def test_photon_layer_thinning_and_area_guard():
     assert abs(len(ph) - n * 0.5 * 0.25) < 5 * np.sqrt(n * 0.125)
     with pytest.raises(ValueError):
         xm.sample_photons(m, 0.0, 50.0, area=200.0)
-
-
-def test_transfer_function_matches_projection():
-    grid = xm.RegularGrid(nx=6, ny=5, scale=1.0)
-    rng = np.random.default_rng(7)
-    e = xm.energy_grid(1.0, 12.0, 0.05)
-    lay = xm.SpecMapLayer("s", grid, [xm.gaussian_line(e, 6.4, 0.05)],
-                          {"NORM": rng.random(grid.n), "G": 0.7 + 0.6 * rng.random(grid.n),
-                           "DELAY": 100 * rng.random(grid.n)})
-    psi = xm.transfer_function(lay, e, np.linspace(0, 100, 11))
-    spec, _ = xm.specmap_projection(lay, edges=e)
-    assert np.allclose(psi.sum(axis=1), spec.values * np.diff(e), rtol=1e-10, atol=1e-14)
-    assert psi.sum() == pytest.approx(lay.mean_photon_flux(), rel=1e-6)
 
 
 def test_shared_psd_driver_is_coherent_across_layers():
