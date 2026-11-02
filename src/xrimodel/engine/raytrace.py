@@ -101,17 +101,19 @@ def sphere_samples(p0, n, centre, radius, n_samples):
     return jnp.where((b2 < radius**2)[:, None], s, -1e300), s_c, jnp.sqrt(jnp.clip(b2, 0, None))
 
 
-def slab_samples(p0, n, centre, radius, half_thickness, n_samples):
+def slab_samples(p0, n, centre, radius, half_thickness, n_samples, axis=(0.0, 0.0, 1.0)):
     """Samples (R, n_samples) along each ray through the part of a bounding sphere that lies
-    within a slab |z - z_centre| <= half_thickness (for thin, disc-like bodies), front first.
-    """
+    within a slab |(p - centre) . axis| <= half_thickness (for thin, disc-like bodies),
+    front first."""
+    axis = jnp.asarray(axis, dtype=float)
     d = centre - p0
     s_c = d @ n
     b2 = jnp.sum(d * d, axis=-1) - s_c**2
     h = jnp.sqrt(jnp.clip(radius**2 - b2, 0.0, None))
-    nz = jnp.where(jnp.abs(n[2]) > 1e-12, n[2], 1e-12)
-    z0 = p0[:, 2] - centre[2]
-    s1, s2 = (half_thickness - z0) / nz, (-half_thickness - z0) / nz
+    na = jnp.dot(n, axis)
+    na = jnp.where(jnp.abs(na) > 1e-12, na, 1e-12)
+    z0 = (p0 - centre) @ axis
+    s1, s2 = (half_thickness - z0) / na, (-half_thickness - z0) / na
     lo = jnp.maximum(jnp.minimum(s1, s2), s_c - h)
     hi = jnp.minimum(jnp.maximum(s1, s2), s_c + h)
     t = jnp.linspace(1.0, 0.0, n_samples)

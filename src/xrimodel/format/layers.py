@@ -25,8 +25,8 @@ from .drivers import Driver
 from .grid import Grid
 from .spectra import Spectrum
 
-SPECMAP_PLANES = ("NORM", "G", "DELAY", "SIGMA", "NH", "TIDX")
-SPECMAP_DEFAULTS = {"G": 1.0, "DELAY": 0.0, "SIGMA": 0.0, "NH": 0.0, "TIDX": 0}
+SPECMAP_PLANES = ("NORM", "G", "DELAY", "SIGMA", "NH", "TIDX", "NE")
+SPECMAP_DEFAULTS = {"G": 1.0, "DELAY": 0.0, "SIGMA": 0.0, "NH": 0.0, "TIDX": 0, "NE": 0.0}
 
 
 @dataclass

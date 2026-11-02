@@ -68,7 +68,8 @@ class Scene:
             "grid": g,
             "energy_edges": np.asarray(self.energy_edges),
             "drivers": [driver_to_spec(d) for d in self.drivers.values()],
-            "components": [{"kind": c.kind, **asdict(c)} for c in self.components],
+            "components": [c.to_dict() if hasattr(c, "to_dict") else {"kind": c.kind, **asdict(c)}
+                           for c in self.components],
         })
 
     @classmethod
@@ -83,5 +84,6 @@ class Scene:
             scene.add_driver(driver_from_spec(d))
         for c in spec.get("components", []):
             c = dict(c)
-            scene.add(COMPONENTS[c.pop("kind")](**c))
+            comp = COMPONENTS[c.pop("kind")]
+            scene.add(comp.from_dict(c) if hasattr(comp, "from_dict") else comp(**c))
         return scene

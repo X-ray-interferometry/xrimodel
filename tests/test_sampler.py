@@ -43,6 +43,16 @@ def test_specmap_absorption_survival():
     assert abs(len(ph) - expected) < 5 * np.sqrt(expected)
 
 
+def test_specmap_electron_scattering_survival():
+    """A Compton-thick electron column scatters photons out of the beam: survival
+    exp(-NE sigma_KN), with sigma_KN(4 keV) = 0.985 sigma_T."""
+    ne = 1.5e24
+    m = _one_pixel_specmap(NE=ne)
+    ph = xm.sample_photons(m, 0.0, 20000.0, area=1.0, rng=3)
+    expected = 20000 * np.exp(-ne * 6.6524587e-25 * 0.9848)
+    assert abs(len(ph) - expected) < 5 * np.sqrt(expected)
+
+
 def test_delay_shifts_driver():
     """A step driver switching on at t=100 reaches a pixel delayed by 50 s at t=150."""
     m = _one_pixel_specmap(DELAY=50.0)

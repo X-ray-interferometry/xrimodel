@@ -70,6 +70,7 @@ Rest-frame templates plus per-pixel planes:
 | `SIGMA` | fractional Gaussian broadening (unresolved velocity spread in the pixel) | 0 |
 | `NH` | absorbing column along the line of sight (cm^-2) | 0 |
 | `TIDX` | which template (0-based) | 0 |
+| `NE` | electron column along the line of sight (cm^-2): Klein-Nishina scattering out of the beam | 0 |
 
 Regular grid: a 3-D image (plane, y, x) with a TAN WCS on axes 1-2 and `PLANEn` keywords.
 Adaptive grid: a BINTABLE with `NUNIQ` and one column per plane. Header: `NTEMPL`, `TEMPLk`,
@@ -77,7 +78,9 @@ Adaptive grid: a BINTABLE with `NUNIQ` and one column per plane. Header: `NTEMPL
 
 A photon from pixel p: arrival time t with rate NORM_p x area x D(t - DELAY_p); E_rest drawn
 from template TIDX_p; E = G_p E_rest (1 + SIGMA_p N(0,1)); kept with probability
-exp(-NH_p sigma(E)).
+exp(-NH_p sigma(E) - NE_p sigma_KN(E)). `NH` counts only gas that absorbs (neutral or
+weakly ionised), `NE` all electrons in front, so Compton-thick and ionised columns lose
+photons to scattering too. Files without an `NE` plane read with NE = 0.
 
 ## SPECCUBE (`SCUBE_<layer>` + `SCEB_<layer>`)
 

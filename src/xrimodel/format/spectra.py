@@ -135,6 +135,23 @@ def sigma_photoabs(e_kev) -> np.ndarray:
     return 2.4e-22 * np.asarray(e_kev, float) ** (-8.0 / 3.0)
 
 
+SIGMA_T = 6.6524587e-25  # cm^2
+ME_KEV = 510.99895
+
+
+def sigma_kn(e_kev) -> np.ndarray:
+    """Klein-Nishina total cross-section per electron (cm^2): electron scattering out of
+    the line of sight, applied with a SpecMap's electron column ``NE``."""
+    x = np.asarray(e_kev, float) / ME_KEV
+    x = np.maximum(x, 1e-6)
+    small = x < 1e-3
+    a = (1 + x) / x**3 * (2 * x * (1 + x) / (1 + 2 * x) - np.log1p(2 * x))
+    b = np.log1p(2 * x) / (2 * x) - (1 + 3 * x) / (1 + 2 * x) ** 2
+    full = 0.75 * (a + b)
+    series = 1 - 2 * x + 5.2 * x**2
+    return SIGMA_T * np.where(small, series, full)
+
+
 ABS_MODELS = {"powerlaw-approx": sigma_photoabs}
 
 

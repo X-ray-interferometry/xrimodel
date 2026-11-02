@@ -28,7 +28,7 @@ from .layers import (
     SpecCubeLayer,
     SpecMapLayer,
 )
-from .spectra import Spectrum, cross_section
+from .spectra import Spectrum, cross_section, sigma_kn
 
 FORMAT_VERSION = "0.1"
 # [EXT,1], [EXT,1][NAME=='x'] or [EXT,1][#row==n], optionally prefixed by a file name
@@ -67,8 +67,8 @@ def _vla(arrays, fmt="PD()"):
 def specmap_projection(layer: SpecMapLayer, edges=None, chunk=4096):
     """Separable approximation of a SpecMapLayer: (pixel-summed spectrum, per-pixel flux).
 
-    Uses each template's CDF with the per-pixel energy shift G and absorption NH at the
-    observed bin centre. Broadening (SIGMA) is ignored here.
+    Uses each template's CDF with the per-pixel energy shift G, absorption NH and electron
+    scattering NE at the observed bin centre. Broadening (SIGMA) is ignored here.
     """
     m = layer.maps
     g = m["G"]
@@ -78,6 +78,7 @@ def specmap_projection(layer: SpecMapLayer, edges=None, chunk=4096):
         edges = np.linspace(lo, hi, 513)
     ec = 0.5 * (edges[1:] + edges[:-1])
     sigma = cross_section(layer.abs_model)(ec)
+    s_es = sigma_kn(ec)
     spec = np.zeros(ec.size)
     pix = np.zeros(layer.grid.n)
     tidx = m["TIDX"].astype(int)
@@ -87,7 +88,7 @@ def specmap_projection(layer: SpecMapLayer, edges=None, chunk=4096):
             idx = sel[s:s + chunk]
             cdf = tmpl.cdf_at(edges[None, :] / g[idx, None])  # (npix, nedges)
             binf = np.diff(cdf, axis=1) * m["NORM"][idx, None]
-            binf *= np.exp(-m["NH"][idx, None] * sigma[None, :])
+            binf *= np.exp(-m["NH"][idx, None] * sigma[None, :] - m["NE"][idx, None] * s_es[None, :])
             spec += binf.sum(axis=0)
             pix[idx] = binf.sum(axis=1)
     return Spectrum(edges, spec / np.diff(edges), layer.name), pix
@@ -538,7 +539,10 @@ def read_model(path) -> Model:
 def _read_specmap(h, name, spectra, driver):
     hdr = h.header
     templates = [spectra[hdr[f"TEMPL{k}"]] for k in range(hdr["NTEMPL"])]
-    planes = [hdr[f"PLANE{i}"] for i in range(1, len(SPECMAP_PLANES) + 1)]
+    planes, i = [], 1
+    while f"PLANE{i}" in hdr:  # files written before a plane existed lack it (default)
+        planes.append(hdr[f"PLANE{i}"])
+        i += 1
     if hdr.get("GRIDTYPE") == "QUADTREE":
         grid = QuadtreeGrid.from_header(hdr, h.data["NUNIQ"])
         maps = {p: np.asarray(h.data[p], float) for p in planes}

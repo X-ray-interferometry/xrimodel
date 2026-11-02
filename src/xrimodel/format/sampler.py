@@ -18,7 +18,7 @@ from ..units import UAS_PER_RAD
 from .drivers import Constant
 from .grid import offsets_to_radec
 from .layers import Model, PhotonLayer, SeparableLayer, SpecCubeLayer, SpecMapLayer
-from .spectra import cross_section
+from .spectra import cross_section, sigma_kn
 
 
 @dataclass
@@ -193,8 +193,9 @@ def _sample_rate_layer(lay, prepared, t0, t1, area, rng):
         if np.any(sig > 0):
             e = e * (1.0 + sig * rng.standard_normal(e.size))
             e = np.abs(e)
-        nh = m_["NH"][p]
-        survive = rng.random(e.size) < np.exp(-nh * cross_section(lay.abs_model)(e))
+        nh, ne = m_["NH"][p], m_["NE"][p]
+        survive = rng.random(e.size) < np.exp(-nh * cross_section(lay.abs_model)(e)
+                                              - ne * sigma_kn(e))
         p, t, e = p[survive], t[survive], e[survive]
         xc, yc = lay.grid.centres()
         x, y = _uniform_in_pixel(xc[p], yc[p], lay.grid.sizes()[p], rng)
@@ -215,7 +216,9 @@ def transfer_function(layer: SpecMapLayer, energy_edges, delay_edges, chunk=4096
     energy_edges = np.asarray(energy_edges, float)
     delay_edges = np.asarray(delay_edges, float)
     m = layer.maps
-    sigma = cross_section(layer.abs_model)(0.5 * (energy_edges[1:] + energy_edges[:-1]))
+    ec = 0.5 * (energy_edges[1:] + energy_edges[:-1])
+    sigma = cross_section(layer.abs_model)(ec)
+    s_es = sigma_kn(ec)
     j = np.digitize(m["DELAY"], delay_edges) - 1
     inside = (j >= 0) & (j < delay_edges.size - 1)
     psi = np.zeros((energy_edges.size - 1, delay_edges.size - 1))
@@ -226,6 +229,6 @@ def transfer_function(layer: SpecMapLayer, energy_edges, delay_edges, chunk=4096
             idx = sel[s:s + chunk]
             cdf = tmpl.cdf_at(energy_edges[None, :] / m["G"][idx, None])
             binf = np.diff(cdf, axis=1) * m["NORM"][idx, None]
-            binf *= np.exp(-m["NH"][idx, None] * sigma[None, :])
+            binf *= np.exp(-m["NH"][idx, None] * sigma[None, :] - m["NE"][idx, None] * s_es[None, :])
             np.add.at(psi.T, j[idx], binf)
     return psi

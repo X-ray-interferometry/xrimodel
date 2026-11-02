@@ -59,11 +59,55 @@ image = photons.to_xrisalis_image()   # for the current XRISALIS API
 `examples/quickstart.py` runs this and plots the disc's G map, the photon spectrum and the
 light curves (the line lags the corona).
 
-## 3-D scenes: an X-ray binary
+## 3-D scenes
 
-`XRBinary` builds a binary from 3-D parts and ray-marches it along the line of sight: a
-Roche-lobe donor, a flared disc and a point-like corona (opaque bodies or point
-sources), plus the donor's beta-law wind (an absorbing, scattering volume). The front-most
+`System3D` composes a scene from named parts in a 3-D frame (a length unit, inclination,
+sky position angle and offset) and ray-marches it along the line of sight:
+
+* **lamps**: point X-ray sources, which also illuminate everything else;
+* **bodies** (opaque): `Sphere` (rotating, with emitting spots), `RocheLobe`, `FlaredDisc`
+  (any axis), `Torus`. The front-most body hides what is behind it; visible surfaces
+  reflect the lamps (pexmon or approximate templates by emission angle, or grey) and may
+  emit their own light;
+* **volumes** (optically thin): `BetaWind` (focused and/or clumped), `Shell`, `GasTorus`
+  (a torus of absorbing gas: transmission through a Compton-thick or clumpy torus), `BiCone`,
+  `Jet` (Lorentz factor, counter-jet, knots), `Loop` (coronal loops). They scatter and
+  reprocess the lamps' light (with emission lines), absorb (neutral, ionisation threshold
+  or none), and may emit. An emitting volume can itself illuminate the scene, as seeded
+  point illuminators drawn from its emissivity;
+* `CustomBody` / `CustomVolume` take your own JAX functions (rendered, but not written to
+  the ModelSpec).
+
+Shadows and the absorbing column between each illuminator and every emitter come from a
+precomputed grid around the illuminator; those columns are added to the emitter's NH
+(absorbing gas) and NE (all electrons: Klein-Nishina scattering out of the line of sight).
+Every emitter carries Doppler factors (including the lamps' own motion), light-travel
+delays and columns, and reprocessed layers follow their illuminator's driver.
+
+```python
+from xrimodel.engine import BiCone, Lamp, Scene, Shell, System3D, Torus
+
+agn = System3D(name="agn", length_unit="pc", inclination=50.0, node_pa=30.0,
+               lamps=[Lamp(name="corona", spectrum={"kind": "powerlaw", "gamma": 1.8,
+                                                    "norm": 0.02})],
+               bodies=[Torus(name="torus", r_major=0.6, r_minor=0.3)],
+               volumes=[BiCone(name="cones", r_in=0.05, r_out=3.0, half_angle=35.0,
+                               n0=3e4, index=2.0, absorption="none")])
+scene = Scene(ra=182.64, dec=39.41, distance_pc=15e6,
+              grid=xm.RegularGrid(nx=200, ny=200, scale=220.0))
+scene.add(agn)
+model = scene.render()   # layers agn_corona, agn_torus, agn_cones0..3
+```
+
+`examples/agn.py` adds a clumpy broad-line region and plots the images. The renderer
+warns when the electron-scattering optical depth along a ray exceeds ~0.3, where the
+single-scattering treatment stops being accurate.
+
+### An X-ray binary
+
+`XRBinary` is a `System3D` preset: a Roche-lobe donor, a flared disc and a point-like
+corona, plus the donor's beta-law wind (optionally focused towards the compact object,
+`focus_amp`, and clumped, `clump_f_vol`). The front-most
 body hides what is behind it, every emitter is absorbed by the wind column in front of it,
 the disc shadows the donor from the corona, and reflected and scattered light is
 normalised from the corona's photon luminosity. It renders into SpecMap layers with
