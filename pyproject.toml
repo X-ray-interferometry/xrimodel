@@ -1,0 +1,38 @@
+[project]
+name = "xrimodel"
+dynamic = ["version"]
+description = "Spectral-timing source models for X-ray interferometry, stored as extended SIMPUT"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "astropy>=7.0",
+]
+
+[project.optional-dependencies]
+# The format library (xrimodel.format) needs only numpy + astropy, so XRISALIS
+# can depend on it without pulling in JAX. The model engine needs JAX.
+engine = ["jax>=0.4.30"]
+dev = ["pytest>=8", "ruff>=0.6", "matplotlib>=3.9", "jax>=0.4.30"]
+
+[build-system]
+requires = ["setuptools>=77.0", "setuptools_scm>=9.2"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+fallback_version = "0.1.0.dev0"
+version_file = "src/xrimodel/_version.py"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+exclude = ["src/xrimodel/_version.py"]
+
+[tool.ruff.lint]
+ignore = ["C408"]  # dict(...) calls are clearer for FITS keyword sets

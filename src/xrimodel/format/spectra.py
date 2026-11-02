@@ -1,0 +1,150 @@
+"""Binned photon spectra.
+
+A :class:`Spectrum` is a photon flux density on energy bins: ``values[i]`` is the mean
+flux density (photons s^-1 cm^-2 keV^-1) in ``[edges[i], edges[i+1])``. Within a bin the
+spectrum is taken as constant when sampling. A *template* is a spectrum whose integral
+is 1, i.e. a probability density in energy.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+from ..units import KEV_TO_ERG
+
+
+@dataclass
+class Spectrum:
+    edges: np.ndarray  # keV, length n+1, ascending
+    values: np.ndarray  # photons/s/cm^2/keV, length n
+    name: str = ""
+
+    def __post_init__(self):
+        self.edges = np.asarray(self.edges, dtype=float)
+        self.values = np.asarray(self.values, dtype=float)
+        if self.edges.ndim != 1 or self.values.shape != (self.edges.size - 1,):
+            raise ValueError("Spectrum needs n+1 edges and n values")
+        if np.any(np.diff(self.edges) <= 0):
+            raise ValueError("Spectrum edges must be strictly ascending")
+        if np.any(self.values < 0):
+            raise ValueError("Spectrum values must be non-negative")
+
+    @property
+    def centres(self) -> np.ndarray:
+        return 0.5 * (self.edges[1:] + self.edges[:-1])
+
+    @property
+    def widths(self) -> np.ndarray:
+        return np.diff(self.edges)
+
+    def photon_flux(self, emin=None, emax=None) -> float:
+        """Photons s^-1 cm^-2 between emin and emax (default: whole spectrum)."""
+        return float(np.sum(self._bin_overlap(emin, emax) * self.values))
+
+    def energy_flux(self, emin=None, emax=None) -> float:
+        """erg s^-1 cm^-2 between emin and emax (bin-centre approximation)."""
+        return float(np.sum(self._bin_overlap(emin, emax) * self.values * self.centres) * KEV_TO_ERG)
+
+    def _bin_overlap(self, emin, emax):
+        lo = self.edges[:-1] if emin is None else np.clip(self.edges[:-1], emin, None)
+        hi = self.edges[1:] if emax is None else np.clip(self.edges[1:], None, emax)
+        return np.clip(hi - lo, 0.0, None)
+
+    def cdf_at(self, e) -> np.ndarray:
+        """Cumulative photon flux from the first edge up to energy ``e`` (piecewise linear)."""
+        cum = np.concatenate([[0.0], np.cumsum(self.values * self.widths)])
+        return np.interp(e, self.edges, cum, left=0.0, right=cum[-1])
+
+    def normalised(self) -> Spectrum:
+        total = self.photon_flux()
+        if total <= 0:
+            raise ValueError("cannot normalise a spectrum with zero flux")
+        return Spectrum(self.edges, self.values / total, self.name)
+
+    def scaled(self, factor: float) -> Spectrum:
+        return Spectrum(self.edges, self.values * factor, self.name)
+
+    def sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        """Draw ``n`` photon energies (keV), uniform within each bin."""
+        p = self.values * self.widths
+        p = p / p.sum()
+        b = rng.choice(p.size, size=n, p=p)
+        return self.edges[b] + rng.random(n) * self.widths[b]
+
+
+# --------------------------------------------------------------------------- constructors
+
+
+def energy_grid(emin=0.3, emax=12.0, de=0.05) -> np.ndarray:
+    """Linear bin edges; the default (~50 eV) oversamples a CCD-like response by ~2."""
+    n = round((emax - emin) / de)
+    return np.linspace(emin, emax, n + 1)
+
+
+def _mean_over_bins(edges, f, sub=8):
+    """Mean of f over each bin by Gauss-Legendre quadrature (``sub`` points)."""
+    xg, wg = np.polynomial.legendre.leggauss(sub)
+    lo, hi = edges[:-1, None], edges[1:, None]
+    e = 0.5 * (hi - lo) * xg[None, :] + 0.5 * (hi + lo)
+    return 0.5 * np.sum(f(e) * wg[None, :], axis=1)
+
+
+def powerlaw(edges, gamma, norm=1.0, name="powerlaw") -> Spectrum:
+    """N(E) = norm * E^-gamma photons/s/cm^2/keV (norm at 1 keV, as XSPEC powerlaw)."""
+    return Spectrum(edges, _mean_over_bins(np.asarray(edges, float), lambda e: norm * e**-gamma), name)
+
+
+def gaussian_line(edges, e0, sigma, flux=1.0, name="line") -> Spectrum:
+    """Gaussian line with total photon flux ``flux`` (photons/s/cm^2), sigma in keV."""
+    from math import erf, sqrt
+
+    edges = np.asarray(edges, float)
+    cdf = np.array([0.5 * (1 + erf((e - e0) / (sqrt(2) * sigma))) for e in edges])
+    return Spectrum(edges, flux * np.diff(cdf) / np.diff(edges), name)
+
+
+def blackbody(edges, kt, norm=1.0, name="bbody") -> Spectrum:
+    """Photon spectrum shape E^2 / (exp(E/kT) - 1), scaled so the peak bin equals ``norm``."""
+    def f(e):
+        return e**2 / np.expm1(e / kt)
+
+    v = _mean_over_bins(np.asarray(edges, float), f)
+    return Spectrum(edges, norm * v / v.max(), name)
+
+
+def add(*spectra: Spectrum, name="sum") -> Spectrum:
+    edges = spectra[0].edges
+    for s in spectra[1:]:
+        if not np.array_equal(s.edges, edges):
+            raise ValueError("can only add spectra on the same energy grid")
+    return Spectrum(edges, np.sum([s.values for s in spectra], axis=0), name)
+
+
+# --------------------------------------------------------------------------- absorption
+
+
+def sigma_photoabs(e_kev) -> np.ndarray:
+    """Approximate photoelectric cross-section per H atom (cm^2), solar abundances.
+
+    A single power law, sigma = 2.4e-22 (E/keV)^(-8/3), roughly following Morrison &
+    McCammon (1983) between 0.5 and 10 keV but without edges. This is a placeholder:
+    swap in a tabulated tbabs cross-section for science work.
+    """
+    return 2.4e-22 * np.asarray(e_kev, float) ** (-8.0 / 3.0)
+
+
+ABS_MODELS = {"powerlaw-approx": sigma_photoabs}
+
+
+def cross_section(name: str):
+    """Look up an absorption cross-section function by name (registers 'tbabs' on demand)."""
+    if name not in ABS_MODELS and name == "tbabs":
+        from ..adapters.xspec import register_tbabs
+
+        register_tbabs()
+    try:
+        return ABS_MODELS[name]
+    except KeyError:
+        raise KeyError(f"unknown absorption model {name!r}; known: {sorted(ABS_MODELS)}") from None
