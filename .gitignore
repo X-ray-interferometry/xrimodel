@@ -8,3 +8,5 @@ src/xrimodel/_version.py
 examples/quickstart.fits
 examples/quickstart.png
 .venv/
+examples/cygx1_phase*.fits
+examples/cygx1_phase*.png

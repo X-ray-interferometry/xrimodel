@@ -59,6 +59,31 @@ image = photons.to_xrisalis_image()   # for the current XRISALIS API
 `examples/quickstart.py` runs this and plots the disc's G map, the photon spectrum and the
 light curves (the line lags the corona).
 
+## 3-D scenes: an X-ray binary
+
+`XRBinary` builds a binary from 3-D parts and ray-marches it along the line of sight: a
+Roche-lobe donor, a flared disc and a point-like corona (opaque bodies or point
+sources), plus the donor's beta-law wind (an absorbing, scattering volume). The front-most
+body hides what is behind it, every emitter is absorbed by the wind column in front of it,
+the disc shadows the donor from the corona, and reflected and scattered light is
+normalised from the corona's photon luminosity. It renders into SpecMap layers with
+Doppler, delay, column and emission-angle (pexmon template) maps:
+
+```python
+from xrimodel.engine import Scene, XRBinary
+
+scene = Scene(ra=299.590315, dec=35.201604, distance_pc=2220.0,
+              grid=xm.RegularGrid(nx=320, ny=320, scale=1.0))
+scene.add(XRBinary("cygx1", {"kind": "powerlaw", "gamma": 1.7, "norm": 2.0}, phase=0.5))
+model = scene.render()   # layers: cygx1_corona, _disc_bb, _star, _disc, _wind0.._wind3
+```
+
+The wind is split into layers by the absorbing column in front of the emission, so each
+layer's per-pixel NH stays accurate. The disc's reflection comes from within ~1 uas of the
+compact object: use a `QuadtreeGrid` refined towards it for accurate disc fluxes.
+`examples/cygx1.py` rebuilds Cyg X-1 (Miller-Jones et al. 2021 system parameters) at
+three orbital phases in a few minutes.
+
 ## Tests
 
 ```bash

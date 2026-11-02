@@ -70,3 +70,21 @@ def register_tbabs(emin=0.05, emax=100.0, nbins=4000):
 
     ABS_MODELS["tbabs"] = sigma_tbabs
     return sigma_tbabs
+
+
+def pexmon_templates(edges, gamma=1.7, fold_e=150.0, mu_edges=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
+                     abund=1.0, fe_abund=1.0):
+    """Reflection-only pexmon spectra (Nandra et al. 2007), one per emission-angle bin.
+
+    Returns (templates, mu_edges): template k is pexmon with rel_refl = -1 evaluated at the
+    inclination arccos(mu_mid_k), for use as SpecMap templates indexed by TIDX. Only the
+    shapes matter (templates are normalised when used).
+    """
+    mu_edges = np.asarray(mu_edges, dtype=float)
+    mids = 0.5 * (mu_edges[1:] + mu_edges[:-1])
+    out = []
+    for k, mu in enumerate(mids):
+        inc = float(np.degrees(np.arccos(np.clip(mu, 0.02, 0.98))))
+        out.append(xspec_spectrum("C_pexmon", [gamma, fold_e, -1.0, 0.0, abund, fe_abund, inc],
+                                  edges, name=f"pexmon_mu{k}"))
+    return out, mu_edges

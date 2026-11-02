@@ -48,7 +48,9 @@ class Scene:
         for d in self.drivers.values():
             model.add_driver(d)
         for c in self.components:
-            model.add(c.render(self))
+            out = c.render(self)
+            for layer in out if isinstance(out, list) else [out]:
+                model.add(layer)
         model.validate()
         return model
 
