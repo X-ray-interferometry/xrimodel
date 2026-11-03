@@ -10,6 +10,7 @@ The component renders, at one orbital phase, into these layers:
 ``<name>_wind<k>``  electron-scattered corona light (plus Fe XXV/XXVI lines) from the
                     donor's beta-law wind, split by the absorbing column in front of the
                     emission (bin k of ``wind_nh_bins``) so each layer's NH is accurate
+``<name>_adc<k>``   corona light electron-scattered in an accretion-disc corona (optional)
 ==================  ==============================================================
 
 Every layer carries Doppler factors (orbital motion, corotation, Keplerian disc, wind
@@ -19,6 +20,13 @@ the corona's driver, delayed. Reflected and scattered intensities are normalised
 corona's photon luminosity, so their fluxes relative to the corona are predictions.
 ``corona_spectrum`` is the corona's emitted spectrum (as a stationary observer at the
 system's distance would see it); the orbital Doppler factor is applied on top.
+
+The defaults are Cyg X-1's (an HMXB with a strong donor wind). For a low-mass X-ray binary
+set ``wind=False`` (no donor wind: no ``wind`` layers, and nothing absorbs the corona's
+light inside the system), size the disc in units of the compact object's Roche lobe with
+``r_disc_out_rl`` (discs typically reach 0.6-0.9 of it), and optionally add an accretion-disc
+corona with ``adc``: a fully ionised, uniform, electron-scattering sphere around the compact
+object, ``{"r_out": <units of a>, "tau": <radial Thomson depth>}``.
 
 Frame: orbital plane (X, Y), Z along the orbital angular momentum, centre of mass at the
 origin. The observer direction is n = (0, -sin i, cos i). Phase 0 is superior conjunction
@@ -49,9 +57,9 @@ import numpy as np
 
 from ..format.spectra import Spectrum
 from ..units import G_CGS, MSUN_G, PC_CM
-from .primitives import BetaWind, FlaredDisc, Lamp, RocheLobe
+from .primitives import BetaWind, FlaredDisc, Lamp, RocheLobe, Shell
 from .spec import build_spectrum
-from .system import System3D
+from .system import NE_PER_H, SIGMA_T, System3D
 from .system import reflection_templates as _refl
 
 RSUN_CM = 6.957e10
@@ -79,8 +87,10 @@ class XRBinary:
     disc_spectrum: dict | None = None  # thermal disc (unresolved), a spectrum spec
     r_disc_in: float = 0.01  # units of a (the reflecting part of the disc)
     r_disc_out: float = 0.15  # units of a
+    r_disc_out_rl: float | None = None  # if set: units of the compact object's Roche lobe
     disc_h_over_r: float = 0.1
     albedo: float = 0.1  # band photon albedo at normal incidence
+    wind: bool = True  # the donor's beta-law wind (False for a low-mass X-ray binary)
     mdot: float = 3e-6  # Msun / yr
     v_inf: float = 2100.0  # km/s
     beta: float = 1.05
@@ -95,6 +105,7 @@ class XRBinary:
     clump_size: float = 0.05  # clump size / distance from the donor
     clump_interclump: float = 0.0
     clump_seed: int = 0
+    adc: dict | None = None  # accretion-disc corona {"r_out": units of a, "tau": radial tau_es}
     absorb_illumination: bool = True
     nh_ism: float = 5.4e21
     x: float = 0.0  # uas, sky offset of the compact object
@@ -117,6 +128,20 @@ class XRBinary:
         m = (self.m_donor + self.m_compact) * MSUN_G
         p = self.period_days * 86400.0
         return (G_CGS * m * p**2 / (4 * np.pi**2)) ** (1.0 / 3.0)
+
+    def roche_lobe(self, body="compact"):
+        """Volume-equivalent Roche-lobe radius of ``body`` ("compact" or "donor") in units
+        of a (Eggleton 1983)."""
+        q = (self.m_compact / self.m_donor if body == "compact"
+             else self.m_donor / self.m_compact)
+        q23 = q ** (2.0 / 3.0)
+        return 0.49 * q23 / (0.6 * q23 + np.log1p(q ** (1.0 / 3.0)))
+
+    def disc_radius(self):
+        """Outer radius of the reflecting disc in units of a."""
+        if self.r_disc_out_rl is None:
+            return self.r_disc_out
+        return self.r_disc_out_rl * self.roche_lobe("compact")
 
     def frame(self):
         """Positions (cm) in the centre-of-mass frame, observer direction and sky-plane axes."""
@@ -169,7 +194,7 @@ class XRBinary:
             return tuple(np.cross([0.0, 0.0, om], p) / 1e5)
 
         lines = []
-        if self.wind_line_ew and edges is not None:
+        if self.wind and self.wind_line_ew and edges is not None:
             corona = build_spectrum(self.corona_spectrum, edges)
             for e0 in (6.70, 6.97):
                 cont = np.interp(e0, corona.centres, corona.values)
@@ -186,20 +211,31 @@ class XRBinary:
         if self.disc_spectrum is not None:
             lamps.append(Lamp(name="disc_bb", spectrum=self.disc_spectrum, velocity=corot(bh),
                               illuminates=False))
+        volumes = []
+        if self.wind:
+            volumes.append(
+                BetaWind(name="wind", star=tuple(donor - bh), r_star=self.r_donor * RSUN_CM,
+                         mdot=self.mdot, v_inf=self.v_inf, beta=self.beta,
+                         v_base=self.v_wind_base, extent=self.wind_extent * a,
+                         velocity=corot(donor), log_xi_crit=self.log_xi_crit, lines=lines,
+                         focus=focus, clumping=clump, refine_body="star", n_fine=self.n_fine))
+        if self.adc is not None:
+            r_adc = self.adc["r_out"] * a
+            # uniform sphere: radial Thomson depth tau = n_e sigma_T r_out, n_e = 1.2 n_H
+            n0 = self.adc["tau"] / (NE_PER_H * SIGMA_T * r_adc)
+            volumes.append(Shell(name="adc", r_in=0.0, r_out=r_adc, n0=n0, velocity=corot(bh),
+                                 absorption="none", n_fine=self.n_fine))
         return System3D(
             name=self.name, inclination=self.inclination, node_pa=self.node_pa, x=self.x,
             y=self.y, nh_ism=self.nh_ism, lamps=lamps,
             bodies=[self._donor(f, bh),
-                    FlaredDisc(name="disc", r_in=self.r_disc_in * a, r_out=self.r_disc_out * a,
+                    FlaredDisc(name="disc", r_in=self.r_disc_in * a, r_out=self.disc_radius() * a,
                                h_over_r=self.disc_h_over_r, mass_msun=self.m_compact,
                                velocity=corot(bh), albedo=self.albedo, n_samples=self.n_disc)],
-            volumes=[BetaWind(name="wind", star=tuple(donor - bh), r_star=self.r_donor * RSUN_CM,
-                              mdot=self.mdot, v_inf=self.v_inf, beta=self.beta,
-                              v_base=self.v_wind_base, extent=self.wind_extent * a,
-                              velocity=corot(donor), log_xi_crit=self.log_xi_crit, lines=lines,
-                              focus=focus, clumping=clump, refine_body="star",
-                              n_fine=self.n_fine)],
-            extent=self.wind_extent * a, n_coarse=self.n_steps, nh_bins=self.wind_nh_bins,
+            volumes=volumes,
+            # without the wind the scene's own bounds set the rays' length
+            extent=self.wind_extent * a if self.wind else None, n_coarse=self.n_steps,
+            nh_bins=self.wind_nh_bins,
             absorb_illumination=self.absorb_illumination, column_grid=self.column_grid,
             supersample=self.supersample, chunk=self.chunk)
 

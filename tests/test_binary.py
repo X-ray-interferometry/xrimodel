@@ -119,3 +119,22 @@ def test_disc_reflection_converges_on_an_adaptive_grid():
         m = sc.render()
         out.append(m.layer("cyg_disc").mean_photon_flux() / m.layer("cyg_corona").mean_photon_flux())
     assert out[0] == pytest.approx(out[1], rel=0.03)
+
+
+def test_low_mass_binary_without_wind_and_with_an_adc():
+    """Without the donor's wind nothing inside the system absorbs the corona, and a
+    thin accretion-disc corona of radial Thomson depth tau scatters ~tau of the corona's
+    photons (less what the disc hides of its far side)."""
+    tau = 0.05
+    kw = dict(m_donor=0.6, m_compact=1.7, period_days=9.8445, inclination=62.5, r_donor=7.0,
+              wind=False, r_disc_out_rl=0.8, disc_h_over_r=0.05, adc={"r_out": 0.05, "tau": tau},
+              nh_ism=0.0, supersample=1, n_steps=96, n_fine=64, n_body=64)
+    grid = xm.RegularGrid(nx=48, ny=48, scale=0.1)
+    sc = Scene(ra=326.17, dec=38.32, distance_pc=7200.0, grid=grid)
+    b = sc.add(XRBinary("cx2", CORONA, phase=0.5, **kw))
+    m = sc.render()
+    names = [L.name for L in m.layers]
+    assert not any(n.startswith("cx2_wind") for n in names)
+    assert b._last_frame["col_bh"] < 1e18
+    adc = sum(L.mean_photon_flux() for L in m.layers if L.name.startswith("cx2_adc"))
+    assert 0.4 * tau < adc / m.layer("cx2_corona").mean_photon_flux() < tau

@@ -2,7 +2,7 @@
 
 Executed notebooks (outputs included, so they read on GitHub without running). Each one ends its
 examples with simulated XRISALIS observations; the quickstart spells the pipeline out and the others
-call `xri_helpers.py` (in this folder), which wraps it. The simulated spacecraft rolls through half a turn over each exposure, and images are reconstructed from the detected energies with `reconstruct`'s `deconvolve` (chromatic decoherence). Without XRISALIS installed those cells skip.
+call `xri_helpers.py` (in this folder), which re-exports XRISALIS's `xrisalis.recipes` wrapping it. The simulated spacecraft rolls through half a turn over each exposure, and images are reconstructed from the detected energies with `reconstruct`'s `deconvolve` (chromatic decoherence). Without XRISALIS installed those cells skip.
 
 | Notebook | Shows | Runtime |
 | --- | --- | --- |
