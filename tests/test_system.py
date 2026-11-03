@@ -200,3 +200,23 @@ def test_spec_round_trip(tmp_path):
     assert [L.name for L in m2.layers] == [L.name for L in m.layers]
     for a_, b_ in zip(m.layers, m2.layers):
         assert b_.mean_photon_flux() == pytest.approx(a_.mean_photon_flux(), rel=1e-9)
+
+
+@pytest.mark.parametrize("e", [0.0, 0.6])
+def test_kepler_orbit(e):
+    """Vis-viva v^2 = G M (2/r - 1/a) for the relative orbit, Kepler's third law, and the
+    centre of mass at rest at the origin."""
+    from xrimodel.engine import KeplerOrbit
+    from xrimodel.units import G_CGS, MSUN_G
+
+    orb = KeplerOrbit(m1=1.4, m2=0.6, period_days=2.5, e=e, omega=40.0, length_unit="Rsun")
+    s = orb.state(np.linspace(0, 1, 37))
+    r = np.linalg.norm(s["r2"] - s["r1"], axis=-1) * RSUN_CM
+    v = np.linalg.norm(s["v2"] - s["v1"], axis=-1) * 1e5
+    gm, a = G_CGS * 2.0 * MSUN_G, orb.a * RSUN_CM
+    assert np.allclose(v**2, gm * (2 / r - 1 / a), rtol=1e-9)
+    assert (2 * np.pi * np.sqrt(a**3 / gm) / 86400) == pytest.approx(2.5, rel=1e-12)
+    assert np.allclose(1.4 * s["r1"] + 0.6 * s["r2"], 0.0, atol=1e-9)
+    assert np.allclose(1.4 * s["v1"] + 0.6 * s["v2"], 0.0, atol=1e-9)
+    assert r.min() == pytest.approx(a * (1 - e), rel=1e-3)
+

@@ -1,12 +1,17 @@
 # xrimodel
 
-Spectral-timing source models for X-ray interferometry. Models are built from components, stored as **extended SIMPUT** FITS files, and sampled into photon lists (time, position, energy) for simulators such as [XRISALIS](https://github.com/X-ray-interferometry/XRISALIS).
+Spectral-timing source models for X-ray interferometry. Models are built from components,
+stored as **extended SIMPUT** FITS files, and sampled into photon lists (time, position,
+energy) for simulators such as [XRISALIS](https://github.com/X-ray-interferometry/XRISALIS).
 
 * `xrimodel.format` (numpy + astropy only): layers, drivers, grids, file I/O, photon sampler.
-  This is generally is all a simulator needs as a baseline.
+  This is all a simulator needs.
 * `xrimodel.engine` (needs JAX): a `Scene` of components that renders to a model.
 * `xrimodel.adapters`: XSPEC models via [xspectrampoline](https://pypi.org/project/xspectrampoline/)
   (no HEASoft needed); energy-delay transfer functions for [nDspec](https://ndspec.readthedocs.io).
+
+Status: 0.1, first cut. See `docs/format.md` for the file format and `docs/roadmap.md` for
+what comes next.
 
 ## Install
 
@@ -25,7 +30,10 @@ pip install xspectrampoline      # optional: XSPEC models and tbabs absorption (
 | `SpecCubeLayer` | dense flux per pixel and energy bin | external simulations |
 | `PhotonLayer` | pre-sampled photons | Monte Carlo codes, real data |
 
-Any layer can follow a named **driver**: a `LightCurve` (time or periodic phase) or a `PSDDriver` (power spectrum + seed). SpecMap layers add a per-pixel `DELAY`, so reprocessed emission follows its driver with light-travel delays. Objects and surfaces render with grids. These are currently split into `RegularGrid` or the adaptive `QuadtreeGrid` (for when you need higher resolution in specific areas).
+Any layer can follow a named **driver**: a `LightCurve` (time or periodic phase) or a
+`PSDDriver` (power spectrum + seed). SpecMap layers add a per-pixel `DELAY`, so reprocessed
+emission follows its driver with light-travel delays. Grids are `RegularGrid` or adaptive
+`QuadtreeGrid`.
 
 ## Example
 
@@ -97,7 +105,13 @@ single-scattering treatment stops being accurate.
 
 ### An X-ray binary
 
-One of our `System3D` presets is an `XRBinary`: a Roche-lobe donor, a flared disc and a point-like corona, plus the donor's beta-law wind (optionally focused towards the compact object, `focus_amp`, and clumped, `clump_f_vol`). This shows off a lot of the functionality already: the front-most body hides what is behind it, every emitter is absorbed by the wind column in front of it, the disc shadows the donor from the corona, and reflected and scattered light is normalised from the corona's photon luminosity. It renders into SpecMap layers with Doppler, delay, column and emission-angle (pexmon template) maps:
+`XRBinary` is a `System3D` preset: a Roche-lobe donor, a flared disc and a point-like
+corona, plus the donor's beta-law wind (optionally focused towards the compact object,
+`focus_amp`, and clumped, `clump_f_vol`). The front-most
+body hides what is behind it, every emitter is absorbed by the wind column in front of it,
+the disc shadows the donor from the corona, and reflected and scattered light is
+normalised from the corona's photon luminosity. It renders into SpecMap layers with
+Doppler, delay, column and emission-angle (pexmon template) maps:
 
 ```python
 from xrimodel.engine import Scene, XRBinary
@@ -108,8 +122,24 @@ scene.add(XRBinary("cygx1", {"kind": "powerlaw", "gamma": 1.7, "norm": 2.0}, pha
 model = scene.render()   # layers: cygx1_corona, _disc_bb, _star, _disc, _wind0.._wind3
 ```
 
-The wind is split into layers by the absorbing column in front of the emission, so each layer's per-pixel NH is stacked and accurate even when winds overlap. The disc's reflection comes from within ~1 uas of the compact object so is only an approximation in this case. `examples/cygx1.py` specifically renders what we expect Cyg X-1 (Miller-Jones et al. 2021 system parameters) to look like at three orbital phases in a few minutes.
+The wind is split into layers by the absorbing column in front of the emission, so each
+layer's per-pixel NH stays accurate. The disc's reflection comes from within ~1 uas of the
+compact object: use a `QuadtreeGrid` refined towards it for accurate disc fluxes.
+`examples/cygx1.py` rebuilds Cyg X-1 (Miller-Jones et al. 2021 system parameters) at
+three orbital phases in a few minutes.
 
 ## Notebooks
 
-`notebooks/` holds executed examples: the format and sampler, Cyg X-1 around its orbit, AGN tori, cones and jets, and an active star simulated end to end through XRISALIS.
+`notebooks/` holds executed examples: the format, the sampler and an active star simulated end to
+end through XRISALIS (the quickstart), Cyg X-1 around its orbit, AGN tori, cones and jets, an
+eclipsing binary star and a binary supermassive black hole (binaries are placed with
+`engine.KeplerOrbit`). Each ends with simulated XRISALIS observations (see `notebooks/README.md`).
+
+## Tests
+
+```bash
+pytest
+```
+
+The statistical tests check counts, energy shifts, broadening, absorption, delays, PSD rms,
+transfer functions, and file round trips for every layer type on both grid types.

@@ -33,6 +33,8 @@ Design plan: https://claude.ai/artifact/A8xqM1DpaJBzz7ETLUKgz9
   reflection and the moving-mirror shift, clump mass conservation, ModelSpec round trip.
   `examples/agn.py`. `GasTorus` (absorbing, scattering, optionally clumpy torus) and a SpecMap
   electron-column plane `NE` (Klein-Nishina losses, for Compton-thick and ionised columns).
+* `engine.KeplerOrbit` (3 Nov 2026): two-body positions and velocities (any eccentricity) to place
+  binaries in a System3D; notebooks 04 (Algol-like eclipsing binary) and 05 (binary SMBH).
 * Still to do: image/cube import as engine components, time-dependent clumps, extended
   illuminators that are bodies (surface emission), beamed (non-isotropic) illuminators,
   per-epoch layers (phase 3).

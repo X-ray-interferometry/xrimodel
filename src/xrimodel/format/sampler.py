@@ -150,7 +150,20 @@ def _sample_rate_layer(lay, prepared, t0, t1, area, rng):
     n = rng.poisson(rate * (t1 - t0) * dmax)
     if n == 0:
         return None
+    if n <= _CHUNK:
+        return _draw(lay, driver, dmax, n, t0, t1, rng)
+    # many candidates (bright or heavily absorbed layers): draw in chunks, so memory
+    # follows the photons that survive thinning and absorption rather than the candidates
+    parts = [_draw(lay, driver, dmax, min(_CHUNK, n - k), t0, t1, rng)
+             for k in range(0, n, _CHUNK)]
+    return tuple(np.concatenate([p[i] for p in parts]) for i in range(4))
 
+
+_CHUNK = 2_000_000
+
+
+def _draw(lay, driver, dmax, n, t0, t1, rng):
+    """``n`` candidate photons of a rate layer, thinned by the driver (and absorbed)."""
     if isinstance(lay, SeparableLayer):
         t, keep = _thin_times(n, t0, t1, driver, 0.0, dmax, rng)
         t = t[keep]
