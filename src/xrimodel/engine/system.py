@@ -82,15 +82,15 @@ NE_PER_H = 1.2
 
 
 def reflection_templates(edges, spec: dict, incident: Spectrum, mu_edges):
-    """pexmon by emission angle for a power-law illuminator (if XSPEC models are
-    installed); otherwise one approximate template: the incident spectrum times a
-    photoabsorption-limited albedo, plus Fe K-alpha."""
-    if spec.get("kind") == "powerlaw":
+    """pexmon by emission angle for a power-law or cut-off power-law illuminator (if XSPEC
+    models are installed); otherwise one approximate template: the incident spectrum times
+    a photoabsorption-limited albedo, plus Fe K-alpha."""
+    if spec.get("kind") in ("powerlaw", "cutoffpl"):
         try:
             from ..adapters.xspec import pexmon_templates
 
             return pexmon_templates(edges, gamma=float(spec.get("gamma", 2.0)),
-                                    mu_edges=mu_edges)
+                                    fold_e=float(spec.get("e_cut", 150.0)), mu_edges=mu_edges)
         except ImportError:
             pass
     e = incident.centres

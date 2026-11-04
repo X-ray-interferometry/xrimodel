@@ -10,6 +10,10 @@ map; its rate at pixel p is then ``mean_rate_p * driver(t - delay_p)``.
 * :class:`PSDDriver`: a power spectrum in fractional rms^2/Hz plus a seed. Written as a
   SIMPUT ``POWSPEC`` extension and realised with Timmer & Koenig (1995) when photons
   are sampled, so the same file and seed give the same light curve.
+
+PSD shapes for it: :func:`lorentzian_psd` (zero-centred or peaked; sum several for
+broadband noise and QPOs), :func:`powerlaw_psd` (rms set over a band) and
+:func:`broken_powerlaw_psd`.
 """
 
 from __future__ import annotations
@@ -181,3 +185,26 @@ def broken_powerlaw_psd(f, rms, f_break, slope_low=0.0, slope_high=2.0):
     shape = (f / f_break) ** -slope_low / (1 + (f / f_break) ** (slope_high - slope_low))
     shape = shape / np.trapezoid(shape, f)
     return rms**2 * shape
+
+
+def lorentzian_psd(f, rms, width, centre=0.0):
+    """Lorentzian in rms^2/Hz with half width at half maximum ``width`` (Hz) about
+    ``centre`` (Hz; 0 for zero-centred broadband noise), normalised analytically so that
+    its integral over 0 < f < infinity is ``rms``^2 (Belloni, Psaltis & van der Klis 2002
+    shapes). Sum several for a multi-Lorentzian power spectrum."""
+    f = np.asarray(f, float)
+    norm = np.pi / 2 + np.arctan(centre / width)
+    return rms**2 / norm * width / (width**2 + (f - centre) ** 2)
+
+
+def powerlaw_psd(f, rms, index, f_lo, f_hi):
+    """Power law P ~ f^-index in rms^2/Hz, normalised analytically so that its integral
+    over [``f_lo``, ``f_hi``] is ``rms``^2 (the convention for the very-low-frequency noise
+    of Z sources, e.g. 0.001-1 Hz; Hasinger & van der Klis 1989). It is not truncated
+    outside that band: the frequency grid given to :class:`PSDDriver` sets that."""
+    f = np.asarray(f, float)
+    if np.isclose(index, 1.0):
+        band = np.log(f_hi / f_lo)
+    else:
+        band = (f_hi ** (1 - index) - f_lo ** (1 - index)) / (1 - index)
+    return rms**2 / band * f ** (-index)

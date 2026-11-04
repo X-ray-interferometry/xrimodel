@@ -96,6 +96,33 @@ def powerlaw(edges, gamma, norm=1.0, name="powerlaw") -> Spectrum:
     return Spectrum(edges, _mean_over_bins(np.asarray(edges, float), lambda e: norm * e**-gamma), name)
 
 
+def cutoffpl(edges, gamma, e_cut, norm=1.0, name="cutoffpl") -> Spectrum:
+    """N(E) = norm * E^-gamma * exp(-E / e_cut) photons/s/cm^2/keV (as XSPEC cutoffpl)."""
+    return Spectrum(edges, _mean_over_bins(np.asarray(edges, float),
+                                           lambda e: norm * e**-gamma * np.exp(-e / e_cut)), name)
+
+
+# 2 / (h^3 c^2) in photons / (s cm^2 sr keV^3), times (1 km / 10 kpc)^2, times 8 pi / 3
+_H_KEV_S, _C_CM_S, _KPC_CM = 4.135667696e-18, 2.99792458e10, 3.0856775814913673e21
+_DISKBB_K = 8 * np.pi / 3 * 2 / (_H_KEV_S**3 * _C_CM_S**2) * (1e5 / (10 * _KPC_CM)) ** 2
+
+
+def diskbb(edges, t_in, norm=1.0, name="diskbb") -> Spectrum:
+    """Multicolour disc blackbody (Mitsuda et al. 1984; XSPEC diskbb): T ~ r^-3/4 from the
+    inner temperature ``t_in`` (keV) outwards, ``norm`` = (R_in / km / (D / 10 kpc))^2 cos i
+    as in XSPEC. Photons/s/cm^2/keV."""
+    u = np.linspace(-14.0, 0.0, 401)  # ln(T / t_in) along the disc
+    x = np.exp(u)
+
+    def f(e):
+        # integral over T of (T/t_in)^-11/3 B_E(T) dT/t_in, written in u = ln(T/t_in)
+        y = e[..., None] / (t_in * x)
+        integrand = np.where(y < 700, x ** (-8.0 / 3.0) / np.expm1(np.minimum(y, 700)), 0.0)
+        return norm * _DISKBB_K * e**2 * np.trapezoid(integrand, u, axis=-1)
+
+    return Spectrum(edges, _mean_over_bins(np.asarray(edges, float), f), name)
+
+
 def gaussian_line(edges, e0, sigma, flux=1.0, name="line") -> Spectrum:
     """Gaussian line with total photon flux ``flux`` (photons/s/cm^2), sigma in keV."""
     from math import erf, sqrt

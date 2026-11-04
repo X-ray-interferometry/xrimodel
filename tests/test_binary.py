@@ -127,7 +127,7 @@ def test_low_mass_binary_without_wind_and_with_an_adc():
     photons (less what the disc hides of its far side)."""
     tau = 0.05
     kw = dict(m_donor=0.6, m_compact=1.7, period_days=9.8445, inclination=62.5, r_donor=7.0,
-              wind=False, r_disc_out_rl=0.8, disc_h_over_r=0.05, adc={"r_out": 0.05, "tau": tau},
+              wind=False, r_disc_out_rg=2e6, disc_h_over_r=0.05, adc={"r_out": 0.05, "tau": tau},
               nh_ism=0.0, supersample=1, n_steps=96, n_fine=64, n_body=64)
     grid = xm.RegularGrid(nx=48, ny=48, scale=0.1)
     sc = Scene(ra=326.17, dec=38.32, distance_pc=7200.0, grid=grid)

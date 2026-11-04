@@ -23,10 +23,11 @@ system's distance would see it); the orbital Doppler factor is applied on top.
 
 The defaults are Cyg X-1's (an HMXB with a strong donor wind). For a low-mass X-ray binary
 set ``wind=False`` (no donor wind: no ``wind`` layers, and nothing absorbs the corona's
-light inside the system), size the disc in units of the compact object's Roche lobe with
-``r_disc_out_rl`` (discs typically reach 0.6-0.9 of it), and optionally add an accretion-disc
-corona with ``adc``: a fully ionised, uniform, electron-scattering sphere around the compact
-object, ``{"r_out": <units of a>, "tau": <radial Thomson depth>}``.
+light inside the system), give the disc's radii in gravitational radii of the compact object
+(``r_disc_in_rg``, ``r_disc_out_rg``; the compact object's Roche lobe, ``roche_lobe_rg()``,
+is recorded in ``_last_frame`` and a disc reaching beyond it warns), and optionally add an
+accretion-disc corona with ``adc``: a fully ionised, uniform, electron-scattering sphere
+around the compact object, ``{"r_out": <units of a>, "tau": <radial Thomson depth>}``.
 
 Frame: orbital plane (X, Y), Z along the orbital angular momentum, centre of mass at the
 origin. The observer direction is n = (0, -sin i, cos i). Phase 0 is superior conjunction
@@ -51,12 +52,13 @@ bin, and ignores the change of the incident shape by absorption.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 
 from ..format.spectra import Spectrum
-from ..units import G_CGS, MSUN_G, PC_CM
+from ..units import C_CM_S, G_CGS, MSUN_G, PC_CM
 from .primitives import BetaWind, FlaredDisc, Lamp, RocheLobe, Shell
 from .spec import build_spectrum
 from .system import NE_PER_H, SIGMA_T, System3D
@@ -87,7 +89,8 @@ class XRBinary:
     disc_spectrum: dict | None = None  # thermal disc (unresolved), a spectrum spec
     r_disc_in: float = 0.01  # units of a (the reflecting part of the disc)
     r_disc_out: float = 0.15  # units of a
-    r_disc_out_rl: float | None = None  # if set: units of the compact object's Roche lobe
+    r_disc_in_rg: float | None = None  # if set: GM_compact/c^2 (overrides r_disc_in)
+    r_disc_out_rg: float | None = None  # if set: GM_compact/c^2 (overrides r_disc_out)
     disc_h_over_r: float = 0.1
     albedo: float = 0.1  # band photon albedo at normal incidence
     wind: bool = True  # the donor's beta-law wind (False for a low-mass X-ray binary)
@@ -137,11 +140,23 @@ class XRBinary:
         q23 = q ** (2.0 / 3.0)
         return 0.49 * q23 / (0.6 * q23 + np.log1p(q ** (1.0 / 3.0)))
 
-    def disc_radius(self):
-        """Outer radius of the reflecting disc in units of a."""
-        if self.r_disc_out_rl is None:
-            return self.r_disc_out
-        return self.r_disc_out_rl * self.roche_lobe("compact")
+    def rg_cm(self):
+        """Gravitational radius GM/c^2 of the compact object (cm)."""
+        return G_CGS * self.m_compact * MSUN_G / C_CM_S**2
+
+    def roche_lobe_rg(self):
+        """The compact object's volume-equivalent Roche-lobe radius in gravitational radii."""
+        return self.roche_lobe("compact") * self.separation_cm() / self.rg_cm()
+
+    def disc_radii(self):
+        """Inner and outer radii of the reflecting disc in units of a."""
+        a_rg = self.separation_cm() / self.rg_cm()
+        r_in = self.r_disc_in if self.r_disc_in_rg is None else self.r_disc_in_rg / a_rg
+        r_out = self.r_disc_out if self.r_disc_out_rg is None else self.r_disc_out_rg / a_rg
+        if r_out > self.roche_lobe("compact"):
+            warnings.warn(f"{self.name}: the disc ({r_out:.3g} a) reaches beyond the compact "
+                          f"object's Roche lobe ({self.roche_lobe('compact'):.3g} a)")
+        return r_in, r_out
 
     def frame(self):
         """Positions (cm) in the centre-of-mass frame, observer direction and sky-plane axes."""
@@ -211,6 +226,7 @@ class XRBinary:
         if self.disc_spectrum is not None:
             lamps.append(Lamp(name="disc_bb", spectrum=self.disc_spectrum, velocity=corot(bh),
                               illuminates=False))
+        r_in, r_out = self.disc_radii()
         volumes = []
         if self.wind:
             volumes.append(
@@ -229,7 +245,7 @@ class XRBinary:
             name=self.name, inclination=self.inclination, node_pa=self.node_pa, x=self.x,
             y=self.y, nh_ism=self.nh_ism, lamps=lamps,
             bodies=[self._donor(f, bh),
-                    FlaredDisc(name="disc", r_in=self.r_disc_in * a, r_out=self.disc_radius() * a,
+                    FlaredDisc(name="disc", r_in=r_in * a, r_out=r_out * a,
                                h_over_r=self.disc_h_over_r, mass_msun=self.m_compact,
                                velocity=corot(bh), albedo=self.albedo, n_samples=self.n_disc)],
             volumes=volumes,
@@ -249,6 +265,7 @@ class XRBinary:
         corona = build_spectrum(self.corona_spectrum, scene.energy_edges)
         lamp = sysm._last["lamps"]["corona"]
         self._last_frame = dict(f, cm_per_uas=sysm._last["cm_per_uas"], col_bh=lamp["column"],
+                                rg=self.rg_cm(), roche_lobe_rg=self.roche_lobe_rg(),
                                 blocked=lamp["blocked"],
                                 n_ph=4 * np.pi * d_cm**2 * corona.photon_flux(),
                                 l_x=4 * np.pi * d_cm**2 * corona.energy_flux())

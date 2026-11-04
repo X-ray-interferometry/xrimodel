@@ -162,3 +162,16 @@ def test_simput_row_sits_on_image_reference(tmp_path):
     assert cat["RA"][0] == pytest.approx(hdr["CRVAL1"], abs=1e-12)
     assert cat["DEC"][0] == pytest.approx(hdr["CRVAL2"], abs=1e-12)
     assert hdr["CRPIX1"] == (10 + 1) / 2 and hdr["CRPIX2"] == (6 + 1) / 2
+
+
+def test_psd_shapes_carry_the_requested_rms():
+    """Lorentzians integrate to rms^2 over 0 < f < inf (zero-centred and peaked), the power
+    law over its band; checked by numerical integration."""
+    from scipy.integrate import quad
+
+    for centre in (0.0, 5.0):
+        got, _ = quad(xm.lorentzian_psd, 0, np.inf, args=(0.1, 2.0, centre), limit=200)
+        assert got == pytest.approx(0.01, rel=1e-6)
+    for index in (1.0, 1.5):
+        got, _ = quad(xm.powerlaw_psd, 1e-3, 1.0, args=(0.03, index, 1e-3, 1.0))
+        assert got == pytest.approx(9e-4, rel=1e-6)

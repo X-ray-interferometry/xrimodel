@@ -3,6 +3,8 @@
 Spectrum specs::
 
     {"kind": "powerlaw", "gamma": 1.7, "norm": 1e-3}      # photons/s/cm^2/keV at 1 keV
+    {"kind": "cutoffpl", "gamma": 1.7, "e_cut": 10.0, "norm": 1e-3}
+    {"kind": "diskbb", "t_in": 1.0, "norm": 100.0}        # XSPEC diskbb normalisation
     {"kind": "gaussian_line", "e0": 6.4, "sigma": 0.01, "flux": 1e-4}
     {"kind": "blackbody", "kt": 0.3, "norm": 1e-2}        # peak-bin flux density
     {"kind": "xspec", "model": "C_powerlaw", "params": [1.7], "norm": 1e-3}
@@ -24,6 +26,10 @@ def build_spectrum(spec: dict, edges) -> sp.Spectrum:
     args = {k: v for k, v in spec.items() if k != "kind"}
     if kind == "powerlaw":
         return sp.powerlaw(edges, **args)
+    if kind == "cutoffpl":
+        return sp.cutoffpl(edges, **args)
+    if kind == "diskbb":
+        return sp.diskbb(edges, **args)
     if kind == "gaussian_line":
         return sp.gaussian_line(edges, **args)
     if kind == "blackbody":
