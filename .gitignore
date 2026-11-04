@@ -14,3 +14,4 @@ examples/agn.fits
 examples/agn.png
 notebooks/*.fits
 notebooks/.ipynb_checkpoints/
+.DS_Store
